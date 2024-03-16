@@ -1,0 +1,89 @@
+/*
+ * Copyright 2024 (Your Name/Company Name)  (Optional, replace with your details)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * The conditional field plugin for Rundeck
+ */
+
+ext.pluginClassNames = 'com.rundeck.plugin.ConditionalFieldPlugin' // Replace with your package structure
+ext.pluginName = 'Conditional Fields'
+ext.pluginDescription = 'Allows defining conditions to show/hide/disable fields in Rundeck forms'
+
+apply plugin: "groovy"
+
+apply from: "../../gradle/java-version.gradle" // Assuming this file sets Java version (adjust path if needed)
+
+jar {
+    manifest {
+        attributes 'Rundeck-Plugin-Classnames': pluginClassNames
+        attributes 'Rundeck-Plugin-Name': pluginName
+        attributes 'Rundeck-Plugin-Description': pluginDescription
+    }
+}
+
+dependencies {
+    compile group: 'com.dtolabs.rundeck', name: 'rundeck-core', version: 'your-rundeck-version' // Replace with your Rundeck version
+    
+    // Add any other dependencies your plugin might need here
+    testImplementation "org.codehaus.groovy:groovy-all:${groovyVersion}" // Assuming groovyVersion is set elsewhere (adjust if needed)
+    testImplementation "org.spockframework:spock-core:${spockVersion}"  // Assuming spockVersion is set elsewhere (adjust if needed)
+    testImplementation "cglib:cglib-nodep:2.2.2"
+}
+
+tasks.withType(Test) {
+    useJUnitPlatform()
+}
+
+task('createPom').doLast {
+    pom {
+        project {
+            artifactId 'rundeck-conditional-field-plugin' // Replace with your desired artifactId
+            groupId project.group  // Assuming group is set elsewhere (adjust if needed)
+            inceptionYear '2024' // Update if needed
+            packaging 'jar'
+            version version
+            name "Rundeck Conditional Field Plugin"
+            url 'http://rundeck.org' // Update URL if needed
+            licenses {
+                license {
+                    name 'The Apache Software License, Version 2.0'
+                    url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    distribution 'repo'
+                }
+            }
+            // Add parent section if your plugin has a parent project (optional)
+            build {
+                plugins {
+                    plugin {
+                        groupId 'org.apache.maven.plugins'
+                        artifactId 'maven-jar-plugin'
+                        version '2.3.2'
+                        configuration {
+                            archive {
+                              manifestEntries{
+                                'Rundeck-Plugin-Classnames'(pluginClassNames)
+                                  'Rundeck-Plugin-Version'(rundeckPluginVersion) // Add Rundeck-Plugin-Version if needed (refer to reference plugin)
+                                  'Rundeck-Plugin-Archive'('true')
+                                  'Rundeck-Plugin-File-Version'(version)
+                              }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }.writeTo("pom.xml")
+}
