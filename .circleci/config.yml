@@ -657,11 +657,6 @@ workflows:
           command: bash test/run-docker-ansible-tests.sh
           <<: *require-build
           <<: *slack-defaults
-      - test-docker:
-          name: Blocklist Test
-          command: bash test/run-docker-plugin-blocklist-test.sh
-          <<: *require-build
-          <<: *slack-defaults
       - test-machine:
           name: LDAP Test
           command: bash test/run-docker-ldap-tests.sh
@@ -680,11 +675,15 @@ workflows:
       - test-gradle-functional:
           name: New Selenium Test
           gradle-task: seleniumCoreTest
-          resource_class: large
           <<: *require-build
           <<: *slack-defaults
       - test-gradle-functional:
           name: New API Test
           gradle-task: apiTest
+          <<: *require-build
+          <<: *slack-defaults
+      - test-gradle-functional:
+          name: New Plugin Blocklist Test
+          gradle-task: pluginBlocklistTest
           <<: *require-build
           <<: *slack-defaults

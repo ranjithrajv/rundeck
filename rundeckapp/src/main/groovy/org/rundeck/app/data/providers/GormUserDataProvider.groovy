@@ -1,11 +1,14 @@
 package org.rundeck.app.data.providers
 
-
+import com.dtolabs.rundeck.core.config.Features
 import grails.compiler.GrailsCompileStatic
 import grails.gorm.DetachedCriteria
 import groovy.transform.TypeCheckingMode
 import groovy.util.logging.Slf4j
 import org.hibernate.StaleStateException
+import org.rundeck.app.config.SysConfigProp
+import org.rundeck.app.config.SystemConfig
+import org.rundeck.app.config.SystemConfigurable
 import org.rundeck.app.data.model.v1.user.LoginStatus
 import org.rundeck.app.data.model.v1.user.RdUser
 import org.rundeck.app.data.model.v1.user.dto.SaveUserResponse
@@ -20,19 +23,22 @@ import rundeck.User
 import rundeck.services.ConfigurationService
 import rundeck.services.FrameworkService
 import rundeck.services.data.UserDataService
+import com.dtolabs.rundeck.core.config.FeatureService
 
 import javax.transaction.Transactional
 
 @GrailsCompileStatic(TypeCheckingMode.SKIP)
 @Slf4j
 @Transactional
-class GormUserDataProvider implements UserDataProvider {
+class GormUserDataProvider implements UserDataProvider, SystemConfigurable{
     @Autowired
     UserDataService userDataService
     @Autowired
     FrameworkService frameworkService
     @Autowired
     ConfigurationService configurationService
+    @Autowired
+    FeatureService featureService
 
     public static final String SESSION_ID_ENABLED = 'userService.login.track.sessionId.enabled'
     public static final String SESSION_ID_METHOD = 'userService.login.track.sessionId.method'
@@ -48,7 +54,7 @@ class GormUserDataProvider implements UserDataProvider {
     @Override
     @Transactional
     User findOrCreateUser(String login) throws DataAccessException {
-        User user = User.findByLogin(login)
+        User user = findUserByLoginCaseSensitivity(login)
         if (!user) {
             User newUser = new User(login: login)
             if (!newUser.save(flush: true)) {
@@ -59,18 +65,10 @@ class GormUserDataProvider implements UserDataProvider {
         return user
     }
 
-    static User getUserByLoginOrCreate(String login) {
-        User user = User.findByLogin(login)
-        if (!user) {
-            user = new User(login: login)
-        }
-        return user
-    }
-
     @Override
     @Transactional
     User registerLogin(String login, String sessionId) throws DataAccessException {
-        User user = getUserByLoginOrCreate(login)
+        User user = findOrCreateUser(login)
         user.lastLogin = new Date()
         user.lastLoggedHostName = frameworkService.getServerHostname()
         user.lastSessionId = null
@@ -94,7 +92,7 @@ class GormUserDataProvider implements UserDataProvider {
     @Override
     @Transactional
     User registerLogout(String login) throws DataAccessException {
-        User user = getUserByLoginOrCreate(login)
+        User user = findOrCreateUser(login)
         user.lastLogout = new Date()
         if (!user.save(flush: true)) {
             throw new DataAccessException("unable to save user: ${user}, ${user.errors.allErrors.join(',')}")
@@ -222,7 +220,7 @@ class GormUserDataProvider implements UserDataProvider {
 
     @Override
     boolean validateUserExists(String username) {
-        return User.countByLogin(username) > 0
+        return isLoginNameCaseInsensitiveEnabled() ? User.countByLoginIlike(username) > 0 : User.countByLogin(username) > 0
     }
 
     @Override
@@ -240,7 +238,7 @@ class GormUserDataProvider implements UserDataProvider {
     @Override
     RdUser findByLogin(String login) {
         User.withNewSession {
-            return User.findByLogin(login)
+            return findUserByLoginCaseSensitivity(login)
         }
     }
 
@@ -252,7 +250,7 @@ class GormUserDataProvider implements UserDataProvider {
     @Override
     @Transactional
     SaveUserResponse updateFilterPref(String login, String filterPref) {
-        User user = User.findByLogin(login)
+        User user = findUserByLoginCaseSensitivity(login)
         user.filterPref = filterPref
         Boolean isSaved = user.save()
         return new SaveUserResponse(user: user, isSaved: isSaved, errors: user.errors)
@@ -262,7 +260,7 @@ class GormUserDataProvider implements UserDataProvider {
     String getEmailWithNewSession(String login) {
         if (!login) { return "" }
         User.withNewSession {
-            def userLogin = User.findByLogin(login)
+            def userLogin = findUserByLoginCaseSensitivity(login)
             if (!userLogin || !userLogin.email) { return "" }
             return userLogin.email
         }
@@ -316,4 +314,43 @@ class GormUserDataProvider implements UserDataProvider {
     def getSessionIdRegisterMethod() {
         configurationService.getString(SESSION_ID_METHOD, 'hash')
     }
+
+    /**
+     Checks if login name case sensitivity is enabled.
+     @return {@code true} if login name case insensitivity is enabled, {@code false} otherwise.
+     */
+    def isLoginNameCaseInsensitiveEnabled(){
+        return featureService?.featurePresent(Features.CASE_INSENSITIVE_USERNAME)
+    }
+
+    /**
+     * Finds a user by their login name, considering the case sensitivity if enabled.
+     * @param login The login name of the user to search for.
+     * @return The User object corresponding to the provided login name.
+     */
+    User findUserByLoginCaseSensitivity(String login) {
+        return isLoginNameCaseInsensitiveEnabled() ?
+                User.findAllByLoginIlike(login).find(){ user -> user.login.equalsIgnoreCase(login)} :
+                User.findByLogin(login)
+    }
+
+    @Override
+    List<SysConfigProp> getSystemConfigProps() {
+        return [
+                SystemConfig.builder().with {
+                     key("rundeck.feature.caseInsensitiveUsername.enabled")
+                    .datatype("Boolean")
+                    .label("Enable case insensitive login name")
+                    .defaultValue("false")
+                    .category("Custom")
+                    .visibility("Advanced")
+                    .strata("default")
+                    .required(false)
+                    .restart(true)
+                    .authRequired('ops_admin')
+                    .build()
+                }
+        ]
+    }
 }
+
